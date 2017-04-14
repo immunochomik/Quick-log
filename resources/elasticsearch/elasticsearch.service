@@ -1,0 +1,9 @@
+[Unit]
+Description=Elasticsearch
+
+[Service]
+ExecStart=/elasticsearch/elasticsearch-5.3.0/bin/elasticsearch
+Restart=on-abort
+
+[Install]
+WantedBy=multi-user.target
