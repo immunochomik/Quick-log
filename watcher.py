@@ -1,13 +1,14 @@
 import sys
 import time
-import logging
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
-from debug import pp
+from app.debug import pp
+from app import log, Manager, Processor
 
 DEFAULT_PATH = '/insert/'
 
-class MyHandler(FileSystemEventHandler):
+
+class WatcherHandler(FileSystemEventHandler):
     def on_modified(self, event):
         pp(event, label='On modified:')
 
@@ -18,13 +19,8 @@ class MyHandler(FileSystemEventHandler):
         pp(event, label='On any event:')
 
 
-if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO,
-                        format='%(asctime)s - %(message)s',
-                        datefmt='%Y-%m-%d %H:%M:%S')
-    path = sys.argv[1] if len(sys.argv) > 1 else DEFAULT_PATH
-    print('Path is ' + path)
-    event_handler = MyHandler()
+def watch_directory(path):
+    event_handler = WatcherHandler()
     observer = Observer()
     observer.schedule(event_handler, path, recursive=True)
     observer.start()
@@ -34,3 +30,19 @@ if __name__ == "__main__":
     except KeyboardInterrupt:
         observer.stop()
     observer.join()
+
+
+def start_processing(manager, processor):
+    todo = manager.get_files_to_proces()
+    for file in todo:
+        processor.generate_dashboard(file)
+
+
+if __name__ == "__main__":
+    path = sys.argv[1] if len(sys.argv) > 1 else DEFAULT_PATH
+    log.info('Path is ' + path)
+    manager = Manager(dir_path=path)
+    processor = Processor()
+    start_processing(manager=manager, processor=processor)
+    watch_directory(manager.dir_path)
+
