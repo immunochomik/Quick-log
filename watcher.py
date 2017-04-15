@@ -3,7 +3,7 @@ import time
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 from app.debug import pp
-from app import log, Manager, Processor
+from app import log, Processor
 
 DEFAULT_PATH = '/insert/'
 
@@ -32,17 +32,11 @@ def watch_directory(path):
     observer.join()
 
 
-def start_processing(manager, processor):
-    todo = manager.get_files_to_proces()
-    for file in todo:
-        processor.generate_dashboard(file)
-
 
 if __name__ == "__main__":
     path = sys.argv[1] if len(sys.argv) > 1 else DEFAULT_PATH
     log.info('Path is ' + path)
-    manager = Manager(dir_path=path)
-    processor = Processor()
-    start_processing(manager=manager, processor=processor)
-    watch_directory(manager.dir_path)
+    processor = Processor(dir_path=path)
+    processor.start_processing()
+    watch_directory(processor.dir_path)
 
