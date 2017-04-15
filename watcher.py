@@ -9,20 +9,25 @@ DEFAULT_PATH = '/insert/'
 
 
 class WatcherHandler(FileSystemEventHandler):
+    def __init__(self, processor):
+        self.processor = processor
+        super(WatcherHandler, self).__init__()
+
     def on_modified(self, event):
         pp(event, label='On modified:')
 
     def on_created(self, event):
         pp(event, label='On created:')
+        if self.processor.need_process(event.path):
+            self.processor.process(event.path)
 
     def on_any_event(self, event):
         pp(event, label='On any event:')
 
-
-def watch_directory(path):
-    event_handler = WatcherHandler()
+def watch_directory(processor):
+    event_handler = WatcherHandler(processor)
     observer = Observer()
-    observer.schedule(event_handler, path, recursive=True)
+    observer.schedule(event_handler, processor.dir_path, recursive=True)
     observer.start()
     try:
         while True:
@@ -38,5 +43,5 @@ if __name__ == "__main__":
     log.info('Path is ' + path)
     processor = Processor(dir_path=path)
     processor.start_processing()
-    watch_directory(processor.dir_path)
+    watch_directory(processor)
 

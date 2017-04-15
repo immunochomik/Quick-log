@@ -1,7 +1,7 @@
 import os
 import logging
 from elasticsearch import Elasticsearch
-from file_utils import hash_file
+from .file_utils import hash_file
 from collections import defaultdict
 
 LOG_FILENAME = 'log/application.log'
@@ -13,7 +13,7 @@ es = Elasticsearch(hosts={"host": "localhost", "port": 9200})
 
 
 def ext(file_path):
-    return file_path.split('.')[-1:].lower()
+    return file_path.split('.')[-1:][0].lower()
 
 
 class Processor(object):
@@ -37,12 +37,16 @@ class Processor(object):
                 yield file
 
     def process(self, file_path):
+        if file_path.find(self.dir_path) == -1:
+            file_path = os.path.join(self.dir_path, file_path)
         log.info('Process ' + file_path)
         try:
             Indexer.make(file_path).index()
             self.mark_done(file_path)
+            return True
         except:
             log.exception('Error in processing of ' + file_path)
+            return False
 
     def generate_dashboard(self, file_path):
         pass
