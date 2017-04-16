@@ -6,17 +6,36 @@ from elasticsearch import Elasticsearch
 from .file_utils import hash_file
 from collections import defaultdict
 from os import path as pa
+from dateutil.parser import parse
+from decimal import Decimal
+from numbers import Number
+
 
 LOG_FILENAME = 'log/application.log'
 logging.basicConfig(filename=LOG_FILENAME, level=logging.DEBUG)
 log = logging.getLogger(name='Quick')
 log.addHandler(logging.StreamHandler())
 
-es = Elasticsearch(hosts={"host": "localhost", "port": 9200})
+es = Elasticsearch(hosts=[{"host": "localhost", "port": 9200}])
 
 
 def ext(file_path):
     return file_path.split('.')[-1:][0].lower()
+
+
+def is_date(string):
+    try:
+        parse(string)
+        return True
+    except ValueError:
+        return False
+
+
+def is_numeric(value):
+    try:
+        return isinstance(Decimal(value), Number)
+    except:
+        return False
 
 
 class Processor(object):
@@ -91,6 +110,7 @@ class Indexer(object):
     recreate_index = False
     default_type = 'log'
     max_bulk = 1000
+    keyword_suffix = '_key'
 
     @staticmethod
     def make(file_path):
@@ -113,6 +133,7 @@ class Indexer(object):
         if pa.exists(settings_file):
             with open(settings_file) as sf:
                 return json.loads(sf.read())
+        return {}
 
     def make_index(self):
         request_body = dict(self.indexing_settings)
@@ -121,7 +142,6 @@ class Indexer(object):
         log.info("creating '%s' index..." % self.trunk)
         res = es.indices.create(index=self.trunk, body=request_body)
         log.info(" response: '%s'" % res)
-
 
     def index_file(self):
         if not es.indices.exists(self.trunk):
@@ -147,12 +167,11 @@ class Indexer(object):
         c = 0
         bulk_data = []
         for item in self._documents_generator():
-            _id = self.make_id(c, item)
             op_dict = {
                 'index': {
                     '_index': self.trunk,
                     '_type': self.type,
-                    '_id': _id
+                    '_id': self.make_id(c, item)
                 }
             }
             bulk_data.append(op_dict)
@@ -164,6 +183,39 @@ class Indexer(object):
                 bulk_data = []
 
     def _generate_mapping(self):
+        props = {}
+        for key, value in self._first_document().items():
+            if is_date(value):
+                props[key] = {
+                    'type': 'date',
+                    'format': 'strict_date_optional_time||epoch_millis'
+                }
+                continue
+            if is_numeric(value):
+                props[key] = {
+                    'type': 'double',
+                }
+                continue
+            props[key] = {
+                'type': 'text'
+            }
+        return {
+            'dynamic_templates': [
+                {
+                    'keywords': {
+                        'match_mapping_type': 'string',
+                        'match': '*' + self.keyword_suffix,
+                        'mapping': {
+                            'type': 'keyword'
+                        }
+                    }
+                }
+            ],
+            'dynamic': 'true',
+            'properties': props
+        }
+
+    def _first_document(self):
         raise NotImplemented('Method not implemented')
 
     def _documents_generator(self):
@@ -171,21 +223,25 @@ class Indexer(object):
 
 
 class CSVIndexer(Indexer):
-    delimiter = ','
-    quotechar = '"'
-
-    def _generate_mapping(self):
-        pass
+    def _first_document(self):
+        for item in self._documents_generator():
+            return item
 
     def _documents_generator(self):
         with open(self.file_path, 'rb') as fd:
-            reader = csv.reader(fd, delimiter=self.delimiter, quotechar=self.quotechar)
+            reader = self.__make_reader(fd)
             header = [item.lower() for item in reader.next()]
             for row in reader:
                 data_dict = {}
                 for i in range(len(row)):
                     data_dict[header[i]] = row[i]
+                    # add keyword
+                    data_dict[header[i] + self.keyword_suffix] = row[i]
                 yield data_dict
+
+    @staticmethod
+    def __make_reader(fd):
+        return csv.reader(fd, delimiter=',', quotechar='"')
 
 
 class JSONIndexer(Indexer):
