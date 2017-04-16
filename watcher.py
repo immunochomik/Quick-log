@@ -2,7 +2,6 @@ import sys
 import time
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
-from app.debug import pp
 from app import log, Processor
 
 DEFAULT_PATH = '/insert/'
@@ -14,15 +13,18 @@ class WatcherHandler(FileSystemEventHandler):
         super(WatcherHandler, self).__init__()
 
     def on_modified(self, event):
-        pp(event, label='On modified:')
+        log.info('On modified: %s' % event)
+        if self.processor.need_process(event.src_path):
+            self.processor.process(event.src_path)
 
     def on_created(self, event):
-        pp(event, label='On created:')
-        if self.processor.need_process(event.path):
-            self.processor.process(event.path)
+        log.info('On created: %s' % event)
+        if self.processor.need_process(event.src_path):
+            self.processor.process(event.src_path)
 
     def on_any_event(self, event):
-        pp(event, label='On any event:')
+        log.debug('On any event: %s' % event)
+
 
 def watch_directory(processor):
     event_handler = WatcherHandler(processor)
@@ -35,7 +37,6 @@ def watch_directory(processor):
     except KeyboardInterrupt:
         observer.stop()
     observer.join()
-
 
 
 if __name__ == "__main__":

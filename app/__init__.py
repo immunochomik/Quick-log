@@ -97,15 +97,15 @@ class Processor(object):
 
 
 class Indexer(object):
-    extension_setting = 'iconf'
+    extension_setting = 'meta'
     indexing_settings = {
         'settings': {
             'number_of_shards': 1,
             'number_of_replicas': 0
         }
     }
-    recreate_index = True
-    default_type = 'log'
+    recreate_index = os.environ.get('QL_INDEXER_RECREATE', False)
+    default_type = os.environ.get('QL_INDEXER_DEF_TYPE', 'log')
     max_bulk = 100
     keyword_suffix = '_key'
 
@@ -153,7 +153,7 @@ class Indexer(object):
         pass
 
     def _mapping(self):
-        return self.user_settings.get('mapping') or self._generate_mapping()
+        return self.user_settings.get('mappings') or self._generate_mapping()
 
     def make_id(self, counter, data_dict):
         id_fields = self.user_settings.get('id_fields')
