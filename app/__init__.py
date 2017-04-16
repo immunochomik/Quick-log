@@ -1,8 +1,11 @@
 import os
 import logging
+import json
+import csv
 from elasticsearch import Elasticsearch
 from .file_utils import hash_file
 from collections import defaultdict
+from os import path as pa
 
 LOG_FILENAME = 'log/application.log'
 logging.basicConfig(filename=LOG_FILENAME, level=logging.DEBUG)
@@ -41,7 +44,7 @@ class Processor(object):
             file_path = os.path.join(self.dir_path, file_path)
         log.info('Process ' + file_path)
         try:
-            Indexer.make(file_path).index()
+            Indexer.make(file_path).index_file()
             self.mark_done(file_path)
             return True
         except:
@@ -75,6 +78,20 @@ class Processor(object):
 
 
 class Indexer(object):
+    extension_setting = 'iconf'
+    indexing_settings = {
+        'settings': {
+            'number_of_shards': 1,
+            'number_of_replicas': 0
+        },
+        'mapping': {
+
+        }
+    }
+    recreate_index = False
+    default_type = 'log'
+    max_bulk = 1000
+
     @staticmethod
     def make(file_path):
         extension = ext(file_path)
@@ -85,18 +102,91 @@ class Indexer(object):
 
     def __init__(self, file_path):
         self.file_path = file_path
+        self.dir = pa.dirname(file_path)
+        self.basename = pa.basename(file_path)
+        self.trunk = self.basename.split('.')[:1][0]
+        self.type = self.default_type
+        self.user_settings = self.load_settings()
+
+    def load_settings(self):
+        settings_file = pa.join(self.dir, self.trunk + '.' + self.extension_setting)
+        if pa.exists(settings_file):
+            with open(settings_file) as sf:
+                return json.loads(sf.read())
 
     def make_index(self):
-        pass
+        request_body = dict(self.indexing_settings)
+        request_body['mapping'] = self._mapping()
 
-    def index(self):
+        log.info("creating '%s' index..." % self.trunk)
+        res = es.indices.create(index=self.trunk, body=request_body)
+        log.info(" response: '%s'" % res)
+
+
+    def index_file(self):
+        if not es.indices.exists(self.trunk):
+            self.make_index()
+        elif self.recreate_index:
+            log.info("deleting '%s' index..." % self.trunk)
+            res = es.indices.delete(index=self.trunk)
+            log.info(" response: '%s'" % res)
+            self.make_index()
+        self._index_content()
         pass
 
     def _mapping(self):
-        pass
+        return self.user_settings.get('mapping') or self._generate_mapping()
+
+    def make_id(self, counter, data_dict):
+        id_fields = self.user_settings.get('id_fields')
+        if id_fields:
+            return '_'.join([data_dict[key] for key in id_fields])
+        return counter
+
+    def _index_content(self):
+        c = 0
+        bulk_data = []
+        for item in self._documents_generator():
+            _id = self.make_id(c, item)
+            op_dict = {
+                'index': {
+                    '_index': self.trunk,
+                    '_type': self.type,
+                    '_id': _id
+                }
+            }
+            bulk_data.append(op_dict)
+            bulk_data.append(item)
+            c += 1
+            if len(bulk_data) > self.max_bulk * 2:
+                res = es.bulk(index=self.type, body=bulk_data, refresh=True)
+                log.debug(res)
+                bulk_data = []
+
+    def _generate_mapping(self):
+        raise NotImplemented('Method not implemented')
+
+    def _documents_generator(self):
+        raise NotImplemented('Method not implemented')
+
 
 class CSVIndexer(Indexer):
-    pass
+    delimiter = ','
+    quotechar = '"'
+
+    def _generate_mapping(self):
+        pass
+
+    def _documents_generator(self):
+        with open(self.file_path, 'rb') as fd:
+            reader = csv.reader(fd, delimiter=self.delimiter, quotechar=self.quotechar)
+            header = [item.lower() for item in reader.next()]
+            for row in reader:
+                data_dict = {}
+                for i in range(len(row)):
+                    data_dict[header[i]] = row[i]
+                yield data_dict
+
 
 class JSONIndexer(Indexer):
     pass
