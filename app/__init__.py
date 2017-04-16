@@ -102,12 +102,11 @@ class Indexer(object):
         'settings': {
             'number_of_shards': 1,
             'number_of_replicas': 0
-        },
-        'mapping': {}
+        }
     }
-    recreate_index = False
+    recreate_index = True
     default_type = 'log'
-    max_bulk = 1000
+    max_bulk = 100
     keyword_suffix = '_key'
 
     @staticmethod
@@ -136,7 +135,7 @@ class Indexer(object):
 
     def make_index(self):
         request_body = dict(self.indexing_settings)
-        request_body['mapping'] = self._mapping()
+        request_body['mappings'] = self._mapping()
 
         log.info("creating '%s' index..." % self.index_name)
         res = es.indices.create(index=self.index_name, body=request_body)
@@ -164,7 +163,7 @@ class Indexer(object):
 
     def _index_content(self):
         c = 0
-        bulk_data = []
+        batch = []
         for item in self._documents_generator():
             op_dict = {
                 'index': {
@@ -173,45 +172,47 @@ class Indexer(object):
                     '_id': self.make_id(c, item)
                 }
             }
-            bulk_data.append(op_dict)
-            bulk_data.append(item)
+            batch.append(op_dict)
+            batch.append(item)
             c += 1
-            if len(bulk_data) > self.max_bulk * 2:
-                res = es.bulk(index=self.type, body=bulk_data, refresh=True)
-                log.debug(res)
-                bulk_data = []
+            if len(batch) > self.max_bulk * 2:
+                batch = self.insert_batch(batch)
+        if batch:
+            self.insert_batch(batch)
 
     def _generate_mapping(self):
         props = {}
         for key, value in self._first_document().items():
+            if is_numeric(value):
+                props[key] = {
+                    'type': 'double',
+                }
+                continue
             if is_date(value):
                 props[key] = {
                     'type': 'date',
                     'format': 'strict_date_optional_time||epoch_millis'
                 }
                 continue
-            if is_numeric(value):
-                props[key] = {
-                    'type': 'double',
-                }
-                continue
             props[key] = {
                 'type': 'text'
             }
         return {
-            'dynamic_templates': [
-                {
-                    'keywords': {
-                        'match_mapping_type': 'string',
-                        'match': '*' + self.keyword_suffix,
-                        'mapping': {
-                            'type': 'keyword'
+            self.type: {
+                'dynamic_templates': [
+                    {
+                        'keywords': {
+                            'match_mapping_type': 'string',
+                            'match': '*' + self.keyword_suffix,
+                            'mapping': {
+                                'type': 'keyword'
+                            }
                         }
                     }
-                }
-            ],
-            'dynamic': 'true',
-            'properties': props
+                ],
+                'dynamic': 'true',
+                'properties': props
+            }
         }
 
     def _first_document(self):
@@ -220,13 +221,19 @@ class Indexer(object):
     def _documents_generator(self):
         raise NotImplemented('Method not implemented')
 
+    def insert_batch(self, bulk_data):
+        log.debug('Insert batch of size %s' % str(len(bulk_data) / 2))
+        res = es.bulk(index=self.type, body=bulk_data, refresh=True)
+        log.debug(res)
+        return []
+
 
 class CSVIndexer(Indexer):
     def _first_document(self):
-        for item in self._documents_generator(add_keys_suffix=False):
+        for item in self._documents_generator(suffix_keyword=False):
             return item
 
-    def _documents_generator(self, add_keys_suffix=True):
+    def _documents_generator(self, suffix_keyword=True):
         with open(self.file_path, 'r') as fd:
             reader = self.__make_reader(fd)
             header = [item.lower() for item in next(reader)]
@@ -234,7 +241,7 @@ class CSVIndexer(Indexer):
                 data_dict = {}
                 for i in range(len(row)):
                     data_dict[header[i]] = row[i]
-                    if add_keys_suffix and not is_numeric(row[i]) and not is_date(row[i]):
+                    if suffix_keyword and not is_numeric(row[i]) and not is_date(row[i]):
                         data_dict[header[i] + self.keyword_suffix] = row[i]
                 yield data_dict
 
