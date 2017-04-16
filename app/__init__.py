@@ -103,9 +103,7 @@ class Indexer(object):
             'number_of_shards': 1,
             'number_of_replicas': 0
         },
-        'mapping': {
-
-        }
+        'mapping': {}
     }
     recreate_index = False
     default_type = 'log'
@@ -127,6 +125,7 @@ class Indexer(object):
         self.trunk = self.basename.split('.')[:1][0]
         self.type = self.default_type
         self.user_settings = self.load_settings()
+        self.index_name = self.trunk.lower()
 
     def load_settings(self):
         settings_file = pa.join(self.dir, self.trunk + '.' + self.extension_setting)
@@ -139,16 +138,16 @@ class Indexer(object):
         request_body = dict(self.indexing_settings)
         request_body['mapping'] = self._mapping()
 
-        log.info("creating '%s' index..." % self.trunk)
-        res = es.indices.create(index=self.trunk, body=request_body)
+        log.info("creating '%s' index..." % self.index_name)
+        res = es.indices.create(index=self.index_name, body=request_body)
         log.info(" response: '%s'" % res)
 
     def index_file(self):
-        if not es.indices.exists(self.trunk):
+        if not es.indices.exists(self.index_name):
             self.make_index()
         elif self.recreate_index:
-            log.info("deleting '%s' index..." % self.trunk)
-            res = es.indices.delete(index=self.trunk)
+            log.info("deleting '%s' index..." % self.index_name)
+            res = es.indices.delete(index=self.index_name)
             log.info(" response: '%s'" % res)
             self.make_index()
         self._index_content()
@@ -169,7 +168,7 @@ class Indexer(object):
         for item in self._documents_generator():
             op_dict = {
                 'index': {
-                    '_index': self.trunk,
+                    '_index': self.index_name,
                     '_type': self.type,
                     '_id': self.make_id(c, item)
                 }
@@ -224,19 +223,19 @@ class Indexer(object):
 
 class CSVIndexer(Indexer):
     def _first_document(self):
-        for item in self._documents_generator():
+        for item in self._documents_generator(add_keys_suffix=False):
             return item
 
-    def _documents_generator(self):
-        with open(self.file_path, 'rb') as fd:
+    def _documents_generator(self, add_keys_suffix=True):
+        with open(self.file_path, 'r') as fd:
             reader = self.__make_reader(fd)
-            header = [item.lower() for item in reader.next()]
+            header = [item.lower() for item in next(reader)]
             for row in reader:
                 data_dict = {}
                 for i in range(len(row)):
                     data_dict[header[i]] = row[i]
-                    # add keyword
-                    data_dict[header[i] + self.keyword_suffix] = row[i]
+                    if add_keys_suffix and not is_numeric(row[i]) and not is_date(row[i]):
+                        data_dict[header[i] + self.keyword_suffix] = row[i]
                 yield data_dict
 
     @staticmethod
