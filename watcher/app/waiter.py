@@ -11,7 +11,7 @@ class Waiter(object):
         self.logger = logger
         self.max_duration = max_duration
         self.start = datetime.now()
-        self.until = self.start + timedelta(self.max_duration)
+        self.until = self.start + timedelta(seconds=self.max_duration)
         self.interval = max_duration / retries
 
     def wait(self):
@@ -23,7 +23,7 @@ class Waiter(object):
                 self._log('Success')
                 return True
             time.sleep(self.interval)
-        raise WaiterException('Max duration reached witch condition not meet')
+        raise WaiterException('Max duration reached with condition not meet')
 
     def _log(self, message):
         if self.logger:

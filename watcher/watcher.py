@@ -70,7 +70,7 @@ def watch_directory(processor):
 
 if __name__ == "__main__":
     # wait for elastic search to start
-    waiter = ESWaiter(logger=log, max_duration=600, retries=50)
+    waiter = ESWaiter(logger=log, max_duration=2, retries=2)
     try:
         waiter.wait()
     except WaiterException:
