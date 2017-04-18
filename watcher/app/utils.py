@@ -2,6 +2,9 @@ import logging
 import hashlib
 import json
 import sys
+from dateutil.parser import parse
+from decimal import Decimal
+from numbers import Number
 
 
 LOG_FILENAME = 'application.log'
@@ -9,6 +12,20 @@ logging.basicConfig(filename=LOG_FILENAME, level=logging.DEBUG)
 log = logging.getLogger(name='Quick')
 log.addHandler(logging.StreamHandler())
 
+
+def is_date(string):
+    try:
+        parse(string)
+        return True
+    except ValueError:
+        return False
+
+
+def is_numeric(value):
+    try:
+        return isinstance(Decimal(value), Number)
+    except:
+        return False
 
 def hash_file(file_path, BUF_SIZE = 65536):
     sha1 = hashlib.sha1()

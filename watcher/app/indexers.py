@@ -3,28 +3,10 @@ import csv
 import os
 from os import path as pa
 from elasticsearch import Elasticsearch
-from dateutil.parser import parse
-from decimal import Decimal
-from numbers import Number
 
-from .utils import ext, log
+from .utils import ext, log, is_date, is_numeric
 
 es = Elasticsearch(hosts=[{"host": "localhost", "port": 9200}])
-
-
-def is_date(string):
-    try:
-        parse(string)
-        return True
-    except ValueError:
-        return False
-
-
-def is_numeric(value):
-    try:
-        return isinstance(Decimal(value), Number)
-    except:
-        return False
 
 
 class Indexer(object):

@@ -1,14 +1,33 @@
+#!/usr/bin/python3
+
 import sys
 import time
 import os
+import requests
 
 from app import Processor
+from app.waiter import Waiter, WaiterException
 from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
 
 from app.utils import log
 
-DEFAULT_PATH = '/insert/'
+DEFAULT_PATH = '/inserts/'
+ES_HOST = 'http://localhost'
+ES_PORT = '9200'
+
+
+class ESWaiter(Waiter):
+    def _check(self):
+        known_version = False
+        try:
+            res = requests.get('{0}:{1}'.format(ES_HOST, ES_PORT))
+            status = res.status_code
+            known_version = res.text.find('version') != -1
+        except Exception as e:
+            status = e.__class__
+        self._log('Es waiter checks if Elasticsearch is reachable %s' % status)
+        return status == 200 and known_version
 
 
 class WatcherHandler(FileSystemEventHandler):
@@ -50,6 +69,13 @@ def watch_directory(processor):
 
 
 if __name__ == "__main__":
+    # wait for elastic search to start
+    waiter = ESWaiter(logger=log, max_duration=600, retries=50)
+    try:
+        waiter.wait()
+    except WaiterException:
+        log.exception('Exception waiting for Elasticsearch to start')
+        sys.exit(1)
     path = sys.argv[1] if len(sys.argv) > 1 else DEFAULT_PATH
     log.info('Path is ' + path)
     processor = Processor(dir_path=path)

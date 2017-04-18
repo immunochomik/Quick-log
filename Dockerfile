@@ -15,7 +15,8 @@ RUN apt-get install -y \
     curl \
     net-tools \
     vim \
-    default-jre default-jdk
+    default-jre default-jdk \
+    python3-pip
 
 ADD resources/apache/apache-config.conf /etc/apache2/sites-enabled/000-default.conf
 
@@ -38,6 +39,12 @@ ENV APACHE_LOG_DIR /var/log/apache2
 
 ADD startscript /scripts/startscript
 RUN chmod +x /scripts/startscript
+
+# Set up watcherd
+COPY watcher /watcher
+RUN mkdir /inserts
+RUN pip3 install -r /watcher/requirements.txt
+RUN chmod +x /watcher/watcher.py
 
 EXPOSE 80
 EXPOSE 9200
