@@ -2,13 +2,20 @@ import logging
 import hashlib
 import json
 import sys
+import os
 from dateutil.parser import parse
 from decimal import Decimal
 from numbers import Number
 
 
+def get_log_level():
+    level = os.environ.get('LOG_LEVEL')
+    if level:
+        return int(level)
+    return logging.DEBUG
+
 LOG_FILENAME = 'application.log'
-logging.basicConfig(filename=LOG_FILENAME, level=logging.DEBUG)
+logging.basicConfig(filename=LOG_FILENAME, level=get_log_level())
 log = logging.getLogger(name='Quick')
 log.addHandler(logging.StreamHandler())
 

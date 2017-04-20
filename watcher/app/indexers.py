@@ -6,8 +6,6 @@ from elasticsearch import Elasticsearch
 
 from .utils import ext, log, is_date, is_numeric
 
-es = Elasticsearch(hosts=[{"host": "localhost", "port": 9200}])
-
 
 class Indexer(object):
     extension_setting = 'meta'
@@ -19,7 +17,7 @@ class Indexer(object):
     }
     recreate_index = os.environ.get('QL_INDEXER_RECREATE', False)
     default_type = os.environ.get('QL_INDEXER_DEF_TYPE', 'log')
-    max_bulk = 500
+    max_bulk = 1000
     keyword_suffix = '_key'
 
     @staticmethod
@@ -30,7 +28,7 @@ class Indexer(object):
         if extension == 'csv':
             return CSVIndexer(file_path)
 
-    def __init__(self, file_path):
+    def __init__(self, file_path, es=None):
         self.file_path = file_path
         self.dir = pa.dirname(file_path)
         self.basename = pa.basename(file_path)
@@ -38,6 +36,8 @@ class Indexer(object):
         self.type = self.default_type
         self.user_settings = self.load_settings()
         self.index_name = self.trunk.lower()
+        self.transform = self._get_transform()
+        self.es = es or Elasticsearch(hosts=[{"host": "localhost", "port": 9200}])
 
     def load_settings(self):
         settings_file = pa.join(self.dir, self.trunk + '.' + self.extension_setting)
@@ -51,15 +51,15 @@ class Indexer(object):
         request_body['mappings'] = self._mapping()
 
         log.info("creating '%s' index..." % self.index_name)
-        res = es.indices.create(index=self.index_name, body=request_body)
+        res = self.es.indices.create(index=self.index_name, body=request_body)
         log.info(" response: '%s'" % res)
 
     def index_file(self):
-        if not es.indices.exists(self.index_name):
+        if not self.es.indices.exists(self.index_name):
             self.make_index()
         elif self.recreate_index:
             log.info("deleting '%s' index..." % self.index_name)
-            res = es.indices.delete(index=self.index_name)
+            res = self.es.indices.delete(index=self.index_name)
             log.info(" response: '%s'" % res)
             self.make_index()
         self._index_content()
@@ -129,24 +129,45 @@ class Indexer(object):
         }
 
     def _first_document(self):
-        raise NotImplemented('Method not implemented')
-
-    def _documents_generator(self):
-        raise NotImplemented('Method not implemented')
-
-    def insert_batch(self, bulk_data):
-        log.debug('Insert batch of size %s' % str(len(bulk_data) / 2))
-        res = es.bulk(index=self.type, body=bulk_data, refresh=True)
-        log.debug(res)
-        return []
-
-
-class CSVIndexer(Indexer):
-    def _first_document(self):
         for item in self._documents_generator(suffix_keyword=False):
             return item
 
-    def _documents_generator(self, suffix_keyword=True):
+    def _documents_generator(self, **kwargs):
+        for each in self._concrete_doc_generator(**kwargs):
+            yield self.transform(each) if self.transform else each
+
+    def insert_batch(self, bulk_data):
+        log.debug('Insert batch of size %s' % str(len(bulk_data) / 2))
+        res = self.es.bulk(index=self.type, body=bulk_data, refresh=True)
+        log.info("Inserted {}".format(len(res['items'])))
+        log_max_errors = 5
+        if res['errors']:
+            for item in res['items']:
+                if item['index']['error']:
+                    log.error(item)
+                    log_max_errors -= 1
+                    if log_max_errors < 0:
+                        log.warn('Possibly there was more errors in that batch, but we log only first few.')
+                        break
+        log.debug(res)
+        return []
+
+    def _get_transform(self):
+        python_file = pa.join(self.dir, self.trunk + '.py')
+        if pa.exists(python_file):
+            import importlib.util
+            spec = importlib.util.spec_from_file_location("fake.module", python_file)
+            foo = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(foo)
+            return foo.transform
+
+    def _concrete_doc_generator(self, **kwargs):
+        raise NotImplemented('Method not implemented')
+
+
+class CSVIndexer(Indexer):
+
+    def _concrete_doc_generator(self, suffix_keyword=True):
         with open(self.file_path, 'r') as fd:
             reader = self.__make_reader(fd)
             header = [item.lower() for item in next(reader)]
