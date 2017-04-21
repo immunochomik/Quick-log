@@ -37,6 +37,19 @@ ENV APACHE_RUN_USER www-data
 ENV APACHE_RUN_GROUP www-data
 ENV APACHE_LOG_DIR /var/log/apache2
 
+# setup kibanan 5
+RUN apt-get update && apt-get install -y \
+    wget \
+    htop
+
+RUN wget -qO - https://artifacts.elastic.co/GPG-KEY-elasticsearch | sudo apt-key add -
+RUN apt-get install -y apt-transport-https
+RUN echo "deb https://artifacts.elastic.co/packages/5.x/apt stable main" | tee -a /etc/apt/sources.list.d/elastic-5.x.list
+RUN apt-get update && apt-get install -y --allow-unauthenticated kibana
+ADD resources/kibana5/kibana.yml /etc/kibana/kibana.yml
+
+
+
 ADD startscript /scripts/startscript
 RUN chmod +x /scripts/startscript
 
@@ -48,5 +61,6 @@ RUN chmod +x /watcher/watcher.py
 
 EXPOSE 80
 EXPOSE 9200
+EXPOSE 5601
 
 CMD /scripts/startscript

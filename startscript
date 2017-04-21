@@ -2,4 +2,5 @@
 
 sudo -u esuser /elasticsearch/elasticsearch-5.3.0/bin/elasticsearch -d
 /usr/sbin/apache2ctl -D BACKGROUND
+service kibana start
 /watcher/watcher.py
