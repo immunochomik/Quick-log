@@ -30,6 +30,8 @@ my_id,sold_at,product,price
 
 You will want to add meta information regarding the unique id field, therefore, you add a file with extension .meta and the same name as the data file:
 
+!!! Warning the id field has to be lover case even if the real column name is not.
+
 __sales_2015.meta__
 
 that file will contain JSON as follows:
